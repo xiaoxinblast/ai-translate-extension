@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AI 翻译助手",
   "version": "1.0.0",
-  "description": "基于 DeepSeek AI 的网页翻译插件，支持多语言互译",
+  "description": "基于 DeepSeek V4 的网页翻译插件，支持双语对照、右键翻译、思考模式",
   "icons": {
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",
@@ -27,13 +27,16 @@
       "matches": ["<all_urls>"],
       "js": ["src/content/content.js"],
       "css": ["src/content/content.css"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_about_blank": true
     }
   ],
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "contextMenus"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -43,5 +46,15 @@
       "resources": [],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "commands": {
+    "translate-page": {
+      "suggested_key": { "default": "Ctrl+Shift+T" },
+      "description": "翻译当前页面"
+    },
+    "restore-page": {
+      "suggested_key": { "default": "Ctrl+Shift+R" },
+      "description": "恢复原文"
+    }
+  }
 }

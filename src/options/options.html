@@ -14,37 +14,26 @@
     </header>
 
     <main class="options-body">
-      <!-- API Key 配置 -->
+      <!-- API Key -->
       <section class="setting-section">
         <h2 class="section-title">DeepSeek API Key</h2>
         <p class="section-desc">
-          使用 DeepSeek 翻译需要 API Key，请前往
-          <a href="https://platform.deepseek.com/api_keys" target="_blank" class="external-link">DeepSeek 开放平台</a>
-          获取。
+          前往 <a href="https://platform.deepseek.com/api_keys" target="_blank" class="external-link">DeepSeek 开放平台</a> 获取 API Key。
         </p>
-
         <div class="input-group">
-          <input
-            type="password"
-            id="apiKey"
-            class="input-field"
-            placeholder="请输入你的 DeepSeek API Key"
-            autocomplete="off"
-          >
+          <input type="password" id="apiKey" class="input-field" placeholder="sk-..." autocomplete="off">
           <button id="toggleApiKey" class="toggle-visibility" title="显示/隐藏">👁</button>
         </div>
-
         <div class="action-row">
-          <button id="saveApiKey" class="btn btn-primary">保存 API Key</button>
+          <button id="saveApiKey" class="btn btn-primary">保存</button>
           <button id="testApiKey" class="btn btn-secondary">测试连接</button>
         </div>
-
         <p id="statusMessage" class="status-message"></p>
       </section>
 
-      <!-- 翻译设置 -->
+      <!-- 翻译引擎设置 -->
       <section class="setting-section">
-        <h2 class="section-title">翻译引擎设置</h2>
+        <h2 class="section-title">翻译引擎</h2>
 
         <div class="setting-item">
           <label class="setting-label" for="modelSelect">模型</label>
@@ -56,18 +45,60 @@
 
         <div class="setting-item">
           <label class="setting-label" for="temperatureRange">
-            翻译温度: <span id="temperatureValue">0.3</span>
+            温度: <span id="temperatureValue">0.3</span>
           </label>
-          <input
-            type="range"
-            id="temperatureRange"
-            class="range-input"
-            min="0"
-            max="1"
-            step="0.1"
-            value="0.3"
-          >
-          <p class="setting-hint">较低温度使翻译更一致，较高温度使翻译更多样</p>
+          <input type="range" id="temperatureRange" class="range-input" min="0" max="2" step="0.1" value="0.3">
+          <p class="setting-hint">越低越一致，越高越多变</p>
+        </div>
+
+        <div class="setting-item">
+          <label class="setting-label" for="maxTokens">最大输出 Token 数: <span id="maxTokensValue">8192</span></label>
+          <input type="range" id="maxTokens" class="range-input" min="1024" max="32768" step="1024" value="8192">
+          <p class="setting-hint">控制单次 API 调用最大输出长度</p>
+        </div>
+      </section>
+
+      <!-- 思考模式 -->
+      <section class="setting-section">
+        <h2 class="section-title">思考模式 (DeepSeek V4)</h2>
+
+        <div class="setting-item">
+          <label class="toggle-label">
+            <span>思考模式</span>
+            <input type="checkbox" id="thinkingToggle" class="toggle-input">
+            <span class="toggle-slider"></span>
+          </label>
+          <p class="setting-hint">V4 默认开启思考，关闭可提速但降低复杂翻译质量</p>
+        </div>
+
+        <div class="setting-item">
+          <label class="setting-label" for="reasoningEffort">思考强度</label>
+          <select id="reasoningEffort" class="select-input">
+            <option value="high">高 (推荐)</option>
+            <option value="max">最大</option>
+          </select>
+          <p class="setting-hint">high 适合日常翻译，max 适合复杂专业内容</p>
+        </div>
+      </section>
+
+      <!-- 请求控制 -->
+      <section class="setting-section">
+        <h2 class="section-title">请求控制</h2>
+
+        <div class="setting-item">
+          <label class="setting-label">每秒最大请求数: <span id="maxRPSValue">2</span></label>
+          <input type="range" id="maxRPS" class="range-input" min="1" max="5" step="1" value="2">
+          <p class="setting-hint">User 账户限 2/秒，Scale 账户可设更高</p>
+        </div>
+
+        <div class="setting-item">
+          <label class="setting-label">每批最大文本长度 (字符): <span id="maxTextLenValue">5000</span></label>
+          <input type="range" id="maxTextLen" class="range-input" min="1000" max="20000" step="500" value="5000">
+        </div>
+
+        <div class="setting-item">
+          <label class="setting-label">每批最大段落数: <span id="maxParaCountValue">30</span></label>
+          <input type="range" id="maxParaCount" class="range-input" min="5" max="100" step="5" value="30">
         </div>
       </section>
 
@@ -76,8 +107,7 @@
         <h2 class="section-title">关于</h2>
         <div class="about-info">
           <p>AI 翻译助手 v1.0.0</p>
-          <p>基于 DeepSeek AI 的网页翻译扩展</p>
-          <p>支持 Microsoft Edge / Google Chrome</p>
+          <p>基于 DeepSeek V4 · Manifest V3</p>
         </div>
       </section>
     </main>

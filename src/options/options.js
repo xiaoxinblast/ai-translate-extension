@@ -1,120 +1,124 @@
-// options.js — 设置页面交互逻辑
+// options.js — 设置页面
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const apiKeyInput = document.getElementById('apiKey');
-  const toggleApiKeyBtn = document.getElementById('toggleApiKey');
-  const saveApiKeyBtn = document.getElementById('saveApiKey');
-  const testApiKeyBtn = document.getElementById('testApiKey');
-  const modelSelect = document.getElementById('modelSelect');
-  const temperatureRange = document.getElementById('temperatureRange');
-  const temperatureValue = document.getElementById('temperatureValue');
-  const statusMessage = document.getElementById('statusMessage');
-  const backLink = document.getElementById('backLink');
+  const $ = (id) => document.getElementById(id);
 
-  // 加载已保存的设置
+  // 加载所有设置
   const settings = await chrome.storage.local.get([
-    'apiKey',
-    'model',
-    'temperature'
+    'apiKey', 'model', 'temperature', 'maxTokens',
+    'thinkingEnabled', 'reasoningEffort',
+    'maxRequestsPerSec', 'maxTextLen', 'maxParaCount'
   ]);
 
-  if (settings.apiKey) {
-    apiKeyInput.value = settings.apiKey;
-  }
-  if (settings.model) {
-    modelSelect.value = settings.model;
-  }
-  if (settings.temperature !== undefined) {
-    temperatureRange.value = settings.temperature;
-    temperatureValue.textContent = settings.temperature;
-  }
+  // API Key
+  if (settings.apiKey) $('apiKey').value = settings.apiKey;
 
-  // 显示/隐藏 API Key
-  toggleApiKeyBtn.addEventListener('click', () => {
-    const isPassword = apiKeyInput.type === 'password';
-    apiKeyInput.type = isPassword ? 'text' : 'password';
-    toggleApiKeyBtn.textContent = isPassword ? '🙈' : '👁';
+  $('toggleApiKey').addEventListener('click', () => {
+    const field = $('apiKey');
+    const btn = $('toggleApiKey');
+    field.type = field.type === 'password' ? 'text' : 'password';
+    btn.textContent = field.type === 'password' ? '👁' : '🙈';
   });
 
-  // 保存 API Key
-  saveApiKeyBtn.addEventListener('click', async () => {
-    const apiKey = apiKeyInput.value.trim();
-    if (!apiKey) {
-      showStatus('请输入 API Key', 'error');
-      return;
-    }
-
-    await chrome.storage.local.set({ apiKey });
-    showStatus('API Key 已保存', 'success');
+  $('saveApiKey').addEventListener('click', async () => {
+    const key = $('apiKey').value.trim();
+    if (!key) { showStatus('请输入 API Key', 'error'); return; }
+    await chrome.storage.local.set({ apiKey: key });
+    showStatus('已保存', 'success');
   });
 
-  // 测试连接
-  testApiKeyBtn.addEventListener('click', async () => {
-    const apiKey = apiKeyInput.value.trim();
-    if (!apiKey) {
-      showStatus('请先输入 API Key', 'error');
-      return;
-    }
-
-    // 先保存
-    await chrome.storage.local.set({ apiKey });
-
-    showStatus('正在测试连接...', '');
-
+  $('testApiKey').addEventListener('click', async () => {
+    const key = $('apiKey').value.trim();
+    if (!key) { showStatus('请先输入 API Key', 'error'); return; }
+    await chrome.storage.local.set({ apiKey: key });
+    showStatus('测试中...', '');
     try {
-      const response = await fetch('https://api.deepseek.com/chat/completions', {
+      const r = await fetch('https://api.deepseek.com/chat/completions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
         body: JSON.stringify({
           model: 'deepseek-v4-flash',
-          messages: [
-            { role: 'system', content: '回复"连接成功"' },
-            { role: 'user', content: '测试' }
-          ],
-          max_tokens: 10
+          messages: [{ role: 'user', content: '回复"ok"' }],
+          max_tokens: 5
         })
       });
-
-      if (response.ok) {
-        showStatus('连接成功！API Key 有效', 'success');
-      } else if (response.status === 401) {
-        showStatus('API Key 无效，请检查', 'error');
-      } else {
-        showStatus(`连接失败: HTTP ${response.status}`, 'error');
-      }
-    } catch (err) {
-      showStatus(`网络错误: ${err.message}`, 'error');
+      showStatus(r.ok ? '连接成功' : (r.status === 401 ? 'API Key 无效' : `HTTP ${r.status}`), r.ok ? 'success' : 'error');
+    } catch (e) {
+      showStatus(`网络错误: ${e.message}`, 'error');
     }
   });
 
-  // 模型选择
-  modelSelect.addEventListener('change', async () => {
-    await chrome.storage.local.set({ model: modelSelect.value });
+  // 模型
+  if (settings.model) $('modelSelect').value = settings.model;
+  $('modelSelect').addEventListener('change', () => {
+    chrome.storage.local.set({ model: $('modelSelect').value });
   });
 
-  // 温度滑块
-  temperatureRange.addEventListener('input', async () => {
-    temperatureValue.textContent = temperatureRange.value;
-    await chrome.storage.local.set({ temperature: parseFloat(temperatureRange.value) });
+  // 温度
+  const temp = settings.temperature !== undefined ? settings.temperature : 0.3;
+  $('temperatureRange').value = temp;
+  $('temperatureValue').textContent = temp;
+  $('temperatureRange').addEventListener('input', () => {
+    const v = parseFloat($('temperatureRange').value);
+    $('temperatureValue').textContent = v;
+    chrome.storage.local.set({ temperature: v });
   });
 
-  // 返回
-  backLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    window.close();
+  // 最大输出 Token
+  const mt = settings.maxTokens || 8192;
+  $('maxTokens').value = mt;
+  $('maxTokensValue').textContent = mt;
+  $('maxTokens').addEventListener('input', () => {
+    const v = parseInt($('maxTokens').value);
+    $('maxTokensValue').textContent = v;
+    chrome.storage.local.set({ maxTokens: v });
   });
+
+  // 思考模式
+  $('thinkingToggle').checked = settings.thinkingEnabled !== false; // 默认开启
+  if (settings.reasoningEffort) $('reasoningEffort').value = settings.reasoningEffort;
+
+  $('thinkingToggle').addEventListener('change', () => {
+    chrome.storage.local.set({ thinkingEnabled: $('thinkingToggle').checked });
+  });
+  $('reasoningEffort').addEventListener('change', () => {
+    chrome.storage.local.set({ reasoningEffort: $('reasoningEffort').value });
+  });
+
+  // 请求控制
+  const rps = settings.maxRequestsPerSec || 2;
+  $('maxRPS').value = rps;
+  $('maxRPSValue').textContent = rps;
+  $('maxRPS').addEventListener('input', () => {
+    const v = parseInt($('maxRPS').value);
+    $('maxRPSValue').textContent = v;
+    chrome.storage.local.set({ maxRequestsPerSec: v });
+  });
+
+  const tlen = settings.maxTextLen || 5000;
+  $('maxTextLen').value = tlen;
+  $('maxTextLenValue').textContent = tlen;
+  $('maxTextLen').addEventListener('input', () => {
+    const v = parseInt($('maxTextLen').value);
+    $('maxTextLenValue').textContent = v;
+    chrome.storage.local.set({ maxTextLen: v });
+  });
+
+  const pcount = settings.maxParaCount || 30;
+  $('maxParaCount').value = pcount;
+  $('maxParaCountValue').textContent = pcount;
+  $('maxParaCount').addEventListener('input', () => {
+    const v = parseInt($('maxParaCount').value);
+    $('maxParaCountValue').textContent = v;
+    chrome.storage.local.set({ maxParaCount: v });
+  });
+
+  $('backLink').addEventListener('click', (e) => { e.preventDefault(); window.close(); });
 
   function showStatus(msg, type) {
-    statusMessage.textContent = msg;
-    statusMessage.className = `status-message ${type}`;
-    if (type === 'success') {
-      setTimeout(() => {
-        statusMessage.textContent = '';
-        statusMessage.className = 'status-message';
-      }, 3000);
-    }
+    const el = $('statusMessage');
+    el.textContent = msg;
+    el.className = `status-message ${type}`;
+    if (type === 'success') setTimeout(() => { el.textContent = ''; el.className = 'status-message'; }, 3000);
   }
 });

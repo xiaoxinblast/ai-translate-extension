@@ -53,13 +53,21 @@
         </select>
       </div>
 
-      <!-- 翻译当前页面按钮 -->
+      <!-- 显示模式 -->
+      <div class="control-group">
+        <label class="select-label" for="displayMode">显示模式</label>
+        <select id="displayMode" class="select-input">
+          <option value="bilingual">双语对照</option>
+          <option value="translation-only">仅显示译文</option>
+        </select>
+      </div>
+
+      <!-- 按钮 -->
       <button id="translateBtn" class="btn btn-primary">
         <span class="btn-icon">T</span>
         翻译当前页面
       </button>
 
-      <!-- 恢复原文按钮 -->
       <button id="restoreBtn" class="btn btn-secondary">
         <span class="btn-icon">R</span>
         恢复原文
@@ -73,7 +81,7 @@
     </main>
 
     <footer class="popup-footer">
-      <button id="openOptions" class="link-btn">设置 API Key</button>
+      <button id="openOptions" class="link-btn">设置</button>
     </footer>
   </div>
 
