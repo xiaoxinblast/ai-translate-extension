@@ -1,0 +1,170 @@
+/* content.css — 翻译插件页面注入样式 */
+
+/* ===== 双语对照翻译包装器 ===== */
+.ai-translation-wrapper {
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+.ai-original-text {
+  display: block;
+  padding-bottom: 2px;
+  margin-bottom: 4px;
+  border-bottom: 1px dashed #d1d5db;
+  transition: background 0.15s;
+}
+
+.ai-original-text:hover {
+  background: rgba(107, 114, 128, 0.06);
+}
+
+.ai-translation-text {
+  display: block;
+  padding: 2px 0 4px 0;
+  color: #4f46e5;
+  font-style: normal;
+  border-bottom: 1px solid rgba(79, 70, 229, 0.15);
+}
+
+/* ===== 翻译进行中状态 ===== */
+.ai-translating {
+  position: relative;
+  opacity: 0.6;
+}
+
+.ai-translating::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, #4f46e5, #7c3aed);
+  animation: translateProgress 1.5s ease-in-out infinite;
+}
+
+@keyframes translateProgress {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+/* ===== 翻译完成高亮 ===== */
+.ai-translated .ai-translation-text {
+  border-left: 3px solid #4f46e5;
+  padding-left: 6px;
+}
+
+/* ===== 浮动工具栏 ===== */
+.ai-translate-toolbar {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+  font-size: 13px;
+  color: #374151;
+  user-select: none;
+}
+
+.ai-translate-toolbar .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  flex-shrink: 0;
+}
+
+.ai-translate-toolbar .status-dot.translating {
+  background: #f59e0b;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.ai-translate-toolbar .status-dot.idle {
+  background: #d1d5db;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.ai-translate-toolbar button {
+  padding: 4px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f9fafb;
+  font-size: 12px;
+  cursor: pointer;
+  color: #374151;
+  transition: all 0.15s;
+}
+
+.ai-translate-toolbar button:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+/* ===== 悬停翻译按钮 ===== */
+.ai-hover-translate-btn {
+  position: absolute;
+  right: 4px;
+  top: 2px;
+  z-index: 2147483646;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(79, 70, 229, 0.9);
+  color: #ffffff;
+  font-size: 12px;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+*:hover > .ai-hover-translate-btn {
+  display: flex;
+}
+
+/* ===== 划词翻译弹出窗口 ===== */
+.ai-selection-popup {
+  position: absolute;
+  z-index: 2147483647;
+  max-width: 360px;
+  padding: 10px 14px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1a1a2e;
+}
+
+.ai-selection-popup .original {
+  color: #6b7280;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.ai-selection-popup .translated {
+  color: #4f46e5;
+}
+
+.ai-selection-popup .loading {
+  color: #9ca3af;
+  font-style: italic;
+}
