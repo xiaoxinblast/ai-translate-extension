@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI 翻译助手",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "基于 DeepSeek V4 的网页翻译插件，支持双语对照、右键翻译、思考模式",
   "icons": {
     "16": "icons/icon-16.png",
@@ -29,14 +29,16 @@
       "css": ["src/content/content.css"],
       "run_at": "document_idle",
       "all_frames": true,
-      "match_about_blank": true
+      "match_about_blank": true,
+      "match_origin_as_fallback": true
     }
   ],
   "permissions": [
     "storage",
     "activeTab",
     "scripting",
-    "contextMenus"
+    "contextMenus",
+    "webNavigation"
   ],
   "host_permissions": [
     "<all_urls>"

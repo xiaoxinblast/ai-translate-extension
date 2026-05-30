@@ -1,6 +1,15 @@
 // content.js — 文本节点级双语翻译引擎
 
-// iframe 守卫：跳过太小或隐藏的 iframe（避免在广告/跟踪 iframe 中无意义执行）
+// 启动标记：输出到 console 方便判断脚本在哪个 frame 运行
+console.log('[AI翻译] 脚本已注入', {
+  url: location.href,
+  title: document.title.slice(0, 50),
+  frame: window === window.top ? 'MAIN' : 'IFRAME',
+  size: window.innerWidth + 'x' + window.innerHeight,
+  textNodes: document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT) ? 'body present' : 'no body'
+});
+
+// iframe 守卫
 if (window !== window.top) {
   const w = window.innerWidth;
   const h = window.innerHeight;
@@ -66,9 +75,32 @@ function escHtml(s) { const d = document.createElement('div'); d.textContent = s
 
 // ===== 诊断快照 =====
 function dumpDiagnostics() {
+  // 只在主 frame 生成快照，避免 iframe 各自下载文件
+  if (window !== window.top) {
+    logger.info('快照跳过 iframe');
+    return;
+  }
+
   const nodes = getTranslatableTextNodes(document.body);
   const translated = document.querySelectorAll(`.${TRAN_CLASS}`);
-  const lines = ['=== AI翻译 - 诊断快照 ===', `时间: ${new Date().toISOString()}`, `URL: ${location.href}`, '', `--- 可翻译文本节点 (${nodes.length}) ---`];
+  const lines = ['=== AI翻译 - 诊断快照 ===', `时间: ${new Date().toISOString()}`, `URL: ${location.href}`, `frame大小: ${window.innerWidth}x${window.innerHeight}`, `文档总文本节点: ${rawCount}`, '', `--- 可翻译文本节点 (${nodes.length}) ---`];
+  // 对原始文本节点做过滤分析
+  const rawNodes = []; { const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) rawNodes.push(n); }
+  const accepted = new Set(nodes);
+  const rejectedSample = [];
+  for (let i = 0; i < Math.min(rawNodes.length, 300); i++) {
+    const n = rawNodes[i];
+    if (!accepted.has(n) && n.textContent.trim().length >= 2) {
+      const p = n.parentElement;
+      rejectedSample.push(`<${p.tagName}> cls="${p.className.slice(0, 30)}" display:${window.getComputedStyle(p).display} hidden:${!!p.closest('[hidden]')} aria:${p.closest('[aria-hidden]') ? '1' : '0'} text="${n.textContent.trim().slice(0, 50)}"`);
+      if (rejectedSample.length >= 30) break;
+    }
+  }
+  if (rejectedSample.length > 0) {
+    lines.push('', `--- 被过滤的文本节点 (共${rawNodes.length - nodes.length}个被拒, 抽样${rejectedSample.length}) ---`);
+    lines.push(...rejectedSample);
+  }
+
   for (let i = 0; i < Math.min(nodes.length, 80); i++) {
     const p = nodes[i].parentElement;
     lines.push(`[${i}] <${p.tagName}> "${nodes[i].textContent.trim().slice(0, 60)}"`);
@@ -100,9 +132,22 @@ function dumpDiagnostics() {
     const t = (cc.textContent || '').trim().slice(0, 60);
     lines.push(`<${cc.tagName}> cls="${cc.className.slice(0, 50)}" children:${cc.children.length} text:"${t}"`);
   }
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `ai-diag-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.txt`; a.click();
-  logger.info('诊断已导出', { nodes: nodes.length, translated: translated.length, invisible: invisible.length });
+  // 检测同页其他 frame（如果是主 frame）
+  if (window === window.top) {
+    const childFrames = document.querySelectorAll('iframe');
+    lines.push('', `--- 子 iframe (${childFrames.length}) ---`);
+    for (const ifr of childFrames) {
+      const doc = ifr.contentDocument;
+      const tn = doc ? doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT) : null;
+      let cnt = 0; if (tn) while (tn.nextNode()) cnt++;
+      lines.push(`src="${(ifr.src || 'srcdoc').slice(0, 60)}" size:${ifr.clientWidth}x${ifr.clientHeight} textNodes:${cnt}`);
+    }
+  }
+	const frameId = window !== window.top ? '-f' + Math.random().toString(36).slice(2,6) : '-main';
+	const snapshotContent = lines.join(String.fromCharCode(10));
+	// 只下载文件，不弹标签页
+	try { const blob = new Blob([snapshotContent], { type: 'text/plain;charset=utf-8' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ai-diag' + frameId + '-' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.txt'; a.click(); } catch(e) {}
+	logger.info('诊断已导出', { frameId, nodes: nodes.length, translated: translated.length });
 }
 
 // ===== 状态 =====
@@ -118,28 +163,29 @@ const state = {
   doneCount: 0
 };
 
-// ===== 消息监听 =====
+// ===== 消息监听（双通道：chrome.runtime + window.postMessage） =====
+function handleAction(action, payload) {
+  switch (action) {
+    case 'toggleTranslation': if (!payload.enabled) restorePage(); break;
+    case 'translate': handleTranslate(payload.sourceLang, payload.targetLang); break;
+    case 'restore': restorePage(); break;
+    case 'setDisplayMode': setDisplayMode(payload.mode); break;
+    case 'toggleLog': toggleLogPanel(); break;
+    case 'dumpSnapshot': dumpDiagnostics(); break;
+    case 'getStatus': return { isTranslating: state.isTranslating, translatedCount: state.translations.size, displayMode: state.displayMode };
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  switch (message.action) {
-    case 'toggleTranslation':
-      if (!message.enabled) restorePage();
-      sendResponse({ success: true });
-      break;
-    case 'translate':
-      handleTranslate(message.sourceLang, message.targetLang);
-      sendResponse({ started: true });
-      break;
-    case 'restore':
-      restorePage();
-      sendResponse({ success: true });
-      break;
-    case 'setDisplayMode':
-      setDisplayMode(message.mode);
-      sendResponse({ success: true });
-      break;
-    case 'getStatus':
-      sendResponse({ isTranslating: state.isTranslating, translatedCount: state.translations.size, displayMode: state.displayMode });
-      break;
+  const result = handleAction(message.action, message);
+  if (message.action === 'getStatus') sendResponse(result || {});
+  else sendResponse({ success: true });
+});
+
+// 备用通道：通过 window.postMessage 接收广播指令
+window.addEventListener('message', (e) => {
+  if (e.data && e.data.source === 'ai-translator') {
+    handleAction(e.data.action, e.data);
   }
 });
 
@@ -156,21 +202,33 @@ async function setDisplayMode(mode) {
   // 切换已有翻译的显示方式
   for (const [textNode, data] of state.translations) {
     if (mode === 'translation-only') {
-      // 藏原文 + 显示译文
-      if (textNode.parentElement) textNode.parentElement.setAttribute('data-ai-original', textNode.textContent);
       textNode.textContent = data.translated;
       if (data.spanEl) data.spanEl.style.display = 'none';
     } else {
-      // 还原原文 + 显示译文 span
-      const orig = textNode.parentElement?.getAttribute('data-ai-original');
-      if (orig) { textNode.textContent = orig; textNode.parentElement.removeAttribute('data-ai-original'); }
+      textNode.textContent = data.original;
       if (data.spanEl) data.spanEl.style.display = '';
     }
   }
   logger.info('显示模式切换', { mode });
 }
 
-// ===== 全局 MutationObserver：常驻监听动态加载内容（评论区、spolier 等） =====
+// ===== 翻译信号：通过 storage 同步所有 frame =====
+chrome.storage.local.onChanged.addListener((changes) => {
+  if (changes.translateSignal && changes.translateSignal.newValue) {
+    const { action, sourceLang, targetLang, mode, enabled } = changes.translateSignal.newValue;
+    if (action === 'translate') {
+      handleTranslate(sourceLang || 'auto', targetLang || 'zh');
+    } else if (action === 'restore') {
+      restorePage();
+    } else if (action === 'setDisplayMode') {
+      setDisplayMode(mode || 'bilingual');
+    } else if (action === 'toggleTranslation') {
+      if (!enabled) restorePage();
+    }
+  }
+});
+
+// ===== 全局 MutationObserver =====
 let dynamicNodes = [];
 const globalMO = new MutationObserver((mutations) => {
   let added = 0;
@@ -447,10 +505,10 @@ function getTranslatableTextNodes(root) {
       // 跳过脚本/样式/不可见标签
       if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'CODE', 'PRE', 'TEXTAREA', 'SVG', 'CANVAS', 'OBJECT', 'EMBED'].includes(tag)) return NodeFilter.FILTER_REJECT;
       if (tag === 'IFRAME') return NodeFilter.FILTER_REJECT;
-      // 跳过 [hidden] 和 aria-hidden（但不包括 third-party 评论插件的隐藏容器）
-      if (parent.closest('[hidden], [aria-hidden="true"]')) return NodeFilter.FILTER_REJECT;
-      // 跳过已翻译内容
-      if (parent.closest(`.${TRAN_CLASS}`)) return NodeFilter.FILTER_REJECT;
+      // 跳过 [hidden] 属性（HTML5 原生隐藏，视觉上不可见）
+      if (parent.closest('[hidden]')) return NodeFilter.FILTER_REJECT;
+      // 跳过已翻译内容 + 自身 UI
+      if (parent.closest(`.${TRAN_CLASS}, .ai-log-panel, .ai-error-popup, .ai-error-indicator, .ai-translate-toolbar, .ai-hover-translate-btn`)) return NodeFilter.FILTER_REJECT;
       // 可见性检查：跳过 display:none，但穿透 third-party 评论插件的隐藏层
       if (!isEffectivelyVisible(parent)) return NodeFilter.FILTER_REJECT;
       const text = node.textContent.trim();
@@ -474,7 +532,8 @@ function isEffectivelyVisible(el) {
     if (s.visibility === 'hidden') return false;
     if (s.display === 'none') {
       // 如果是 third-party 评论容器（Tolstoy、Disqus 等），允许穿透
-      const cls = p.className || '';
+      const rawCls = p.className || '';
+      const cls = typeof rawCls === 'string' ? rawCls : (rawCls.baseVal || '');
       const id = p.id || '';
       if (/tolstoycomments/i.test(cls) || /tolstoycomments/i.test(id) ||
           /disqus/i.test(cls) || /disqus/i.test(id) ||
@@ -527,9 +586,8 @@ function injectTranslation(textNode, translatedText) {
 
   state.translations.set(textNode, { original: textNode.textContent, translated: translatedText, spanEl: span });
 
-  // translation-only 模式
+  // translation-only：替换原文，隐藏译文 span
   if (state.displayMode === 'translation-only') {
-    parent.setAttribute('data-ai-original', textNode.textContent);
     textNode.textContent = translatedText;
     span.style.display = 'none';
   }
@@ -541,12 +599,8 @@ function restorePage() {
   logger.info('恢复原文', { count: state.translations.size });
 
   for (const [textNode, data] of state.translations) {
-    // 还原原文内容
-    const parent = textNode.parentElement;
-    if (parent && parent.hasAttribute('data-ai-original')) {
-      textNode.textContent = parent.getAttribute('data-ai-original');
-      parent.removeAttribute('data-ai-original');
-    }
+    // 从 Map 还原原文
+    textNode.textContent = data.original;
     // 移除译文 span
     if (data.spanEl && data.spanEl.parentNode) data.spanEl.remove();
   }

@@ -46,6 +46,14 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   await chrome.storage.session.set({ [STATE_KEY]: states });
 });
 
+// 页面导航/刷新时重置状态（主 frame 导航意味着页面内容变了）
+chrome.webNavigation.onCommitted.addListener(async (details) => {
+  if (details.frameId === 0) { // 仅主 frame
+    await setTabState(details.tabId, false);
+    chrome.contextMenus.update('toggle-translate', { title: '翻译页面' });
+  }
+});
+
 // ===== 右键菜单 =====
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (!tab?.id || info.menuItemId !== 'toggle-translate') return;
@@ -59,59 +67,58 @@ chrome.commands.onCommand.addListener((command) => {
     if (command === 'translate-page') {
       const isTranslated = await getTabState(tab.id);
       if (isTranslated) {
-        await broadcastToTab(tab.id, { action: 'restore' });
+        await chrome.storage.local.set({ translateSignal: { action: 'restore', _ts: Date.now() } });
       } else {
         chrome.storage.local.get(['sourceLang', 'targetLang'], async (s) => {
-          await broadcastToTab(tab.id, {
-            action: 'translate',
-            sourceLang: s.sourceLang || 'auto',
-            targetLang: s.targetLang || 'zh'
-          });
+          await chrome.storage.local.set({ translateSignal: { action: 'translate', sourceLang: s.sourceLang || 'auto', targetLang: s.targetLang || 'zh', _ts: Date.now() } });
         });
       }
     } else if (command === 'restore-page') {
-      await broadcastToTab(tab.id, { action: 'restore' });
+      await chrome.storage.local.set({ translateSignal: { action: 'restore', _ts: Date.now() } });
     }
   });
 });
 
 async function toggleTranslate(tabId) {
-  // 查询 content script 真实状态（而非依赖缓存）
-  let actualState = false;
-  try {
-    const resp = await chrome.tabs.sendMessage(tabId, { action: 'getStatus' });
-    actualState = resp?.translatedCount > 0;
-  } catch (e) {
-    // content script 可能未注入，使用 session 缓存
-    actualState = await getTabState(tabId);
-  }
+  const isTranslated = await getTabState(tabId);
 
-  if (actualState) {
-    await broadcastToTab(tabId, { action: 'restore' });
+  if (isTranslated) {
+    await chrome.storage.local.set({ translateSignal: { action: 'restore', _ts: Date.now() } });
     await setTabState(tabId, false);
     chrome.contextMenus.update('toggle-translate', { title: '翻译页面' });
   } else {
     chrome.storage.local.get(['sourceLang', 'targetLang'], async (s) => {
-      await broadcastToTab(tabId, {
-        action: 'translate',
-        sourceLang: s.sourceLang || 'auto',
-        targetLang: s.targetLang || 'zh'
-      });
+      await chrome.storage.local.set({ translateSignal: { action: 'translate', sourceLang: s.sourceLang || 'auto', targetLang: s.targetLang || 'zh', _ts: Date.now() } });
     });
     await setTabState(tabId, true);
     chrome.contextMenus.update('toggle-translate', { title: '还原原文' });
   }
 }
 
-// 向标签页所有 frame 广播消息
+// 向标签页所有 frame 广播消息（两种方式并行确保覆盖）
 async function broadcastToTab(tabId, message) {
+  // 方式1: scripting API 注入所有 frame（覆盖动态创建的 frame）
+  try {
+    const frames = await chrome.webNavigation.getAllFrames({ tabId });
+    const targets = frames.map(f => ({ tabId, frameIds: [f.frameId] }));
+    for (const t of targets) {
+      chrome.scripting.executeScript({
+        target: t,
+        func: (msg) => {
+          // 通知已在运行的 content script
+          window.postMessage({ source: 'ai-translator', ...msg }, '*');
+        },
+        args: [message]
+      }).catch(() => {});
+    }
+  } catch (e) {}
+  // 方式2: 直接发消息给所有已知 frame
   try {
     const frames = await chrome.webNavigation.getAllFrames({ tabId });
     for (const frame of frames) {
       chrome.tabs.sendMessage(tabId, message, { frameId: frame.frameId }).catch(() => {});
     }
   } catch (e) {
-    // getAllFrames 可能不可用，回退到主 frame
     chrome.tabs.sendMessage(tabId, message).catch(() => {});
   }
 }
@@ -126,8 +133,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'broadcast') {
     chrome.tabs.query({ active: true, currentWindow: true }, async ([tab]) => {
       if (tab?.id) {
-        const { broadcastAction, ...payload } = message;
-        await broadcastToTab(tab.id, { action: broadcastAction, ...payload });
+        const cmd = message.cmd || message.broadcastAction;
+        await broadcastToTab(tab.id, { action: cmd, sourceLang: message.sourceLang, targetLang: message.targetLang, mode: message.mode, enabled: message.enabled });
       }
       sendResponse({ success: true });
     });
