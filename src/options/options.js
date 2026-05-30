@@ -7,7 +7,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settings = await chrome.storage.local.get([
     'apiKey', 'model', 'temperature', 'maxTokens',
     'thinkingEnabled', 'reasoningEffort',
-    'maxRequestsPerSec', 'maxTextLen', 'maxParaCount'
+    'maxRequestsPerSec', 'maxTextLen', 'maxParaCount',
+    'selectionTranslateEnabled'
   ]);
 
   // API Key
@@ -111,6 +112,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const v = parseInt($('maxParaCount').value);
     $('maxParaCountValue').textContent = v;
     chrome.storage.local.set({ maxParaCount: v });
+  });
+
+  // 划词翻译
+  $('selectionToggle').checked = settings.selectionTranslateEnabled !== false;
+  $('selectionToggle').addEventListener('change', () => {
+    chrome.storage.local.set({ selectionTranslateEnabled: $('selectionToggle').checked });
   });
 
   $('backLink').addEventListener('click', (e) => { e.preventDefault(); window.close(); });

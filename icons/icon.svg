@@ -1,40 +1,47 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#4f46e5"/>
-      <stop offset="100%" stop-color="#7c3aed"/>
+      <stop offset="0%" stop-color="#1e3a5f"/>
+      <stop offset="35%" stop-color="#2563eb"/>
+      <stop offset="70%" stop-color="#06b6d4"/>
+      <stop offset="100%" stop-color="#6366f1"/>
     </linearGradient>
     <linearGradient id="bubbleGrad" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
-      <stop offset="100%" stop-color="#eef2ff" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#ecfeff" stop-opacity="0.9"/>
     </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
 
   <!-- 背景圆角矩形 -->
-  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
+  <rect x="4" y="4" width="120" height="120" rx="30" fill="url(#bg)"/>
 
   <!-- 左侧气泡 -->
   <g transform="translate(10, 28)">
     <rect x="0" y="0" width="52" height="38" rx="10" fill="url(#bubbleGrad)" opacity="0.95"/>
-    <polygon points="4,38 4,46 14,38" fill="#ffffff" opacity="0.9"/>
-    <!-- 文字线 -->
-    <rect x="8" y="10" width="28" height="4" rx="2" fill="#4f46e5" opacity="0.4"/>
-    <rect x="8" y="18" width="36" height="4" rx="2" fill="#4f46e5" opacity="0.3"/>
-    <rect x="8" y="26" width="20" height="4" rx="2" fill="#4f46e5" opacity="0.25"/>
+    <polygon points="4,38 4,46 14,38" fill="#ffffff" opacity="0.92"/>
+    <rect x="8" y="10" width="28" height="4" rx="2" fill="#2563eb" opacity="0.35"/>
+    <rect x="8" y="18" width="36" height="4" rx="2" fill="#2563eb" opacity="0.25"/>
+    <rect x="8" y="26" width="20" height="4" rx="2" fill="#2563eb" opacity="0.2"/>
   </g>
 
   <!-- 右侧气泡 -->
   <g transform="translate(58, 48)">
-    <rect x="0" y="0" width="52" height="38" rx="10" fill="#ffffff" opacity="0.9"/>
-    <polygon points="48,38 48,46 38,38" fill="#ffffff" opacity="0.85"/>
-    <!-- 文字线 -->
-    <rect x="8" y="10" width="30" height="4" rx="2" fill="#7c3aed" opacity="0.4"/>
-    <rect x="8" y="18" width="24" height="4" rx="2" fill="#7c3aed" opacity="0.3"/>
-    <rect x="8" y="26" width="34" height="4" rx="2" fill="#7c3aed" opacity="0.25"/>
+    <rect x="0" y="0" width="52" height="38" rx="10" fill="#ffffff" opacity="0.92"/>
+    <polygon points="48,38 48,46 38,38" fill="#ffffff" opacity="0.88"/>
+    <rect x="8" y="10" width="30" height="4" rx="2" fill="#06b6d4" opacity="0.4"/>
+    <rect x="8" y="18" width="24" height="4" rx="2" fill="#06b6d4" opacity="0.3"/>
+    <rect x="8" y="26" width="34" height="4" rx="2" fill="#06b6d4" opacity="0.25"/>
   </g>
 
-  <!-- 中间箭头 -->
-  <g transform="translate(78, 10)">
-    <path d="M0,8 L8,0 L8,5 L12,5 L12,11 L8,11 L8,16 Z" fill="#fff" opacity="0.85" transform="rotate(180, 6, 8)"/>
+  <!-- 中间箭头（青白色发光） -->
+  <g transform="translate(78, 10)" filter="url(#glow)">
+    <path d="M0,8 L8,0 L8,5 L12,5 L12,11 L8,11 L8,16 Z" fill="#cffafe" opacity="0.9" transform="rotate(180, 6, 8)"/>
   </g>
 </svg>

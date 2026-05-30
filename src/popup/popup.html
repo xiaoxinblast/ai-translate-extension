@@ -10,7 +10,7 @@
   <div class="popup-container">
     <header class="popup-header">
       <h1 class="title">AI 翻译助手</h1>
-      <span class="version">v1.1</span>
+      <span class="version">v1.2</span>
     </header>
 
     <main class="popup-body">
@@ -62,9 +62,18 @@
         </select>
       </div>
 
+      <!-- 划词翻译开关 -->
+      <div class="control-group">
+        <label class="toggle-label">
+          <span>划词翻译</span>
+          <input type="checkbox" id="selectionToggle" class="toggle-input" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
       <!-- 按钮 -->
       <button id="translateBtn" class="btn btn-primary">
-        <span class="btn-icon">T</span>
+        <span class="btn-icon">&#x1f310;</span>
         翻译当前页面
       </button>
 
@@ -74,7 +83,7 @@
       </div>
 
       <button id="restoreBtn" class="btn btn-secondary">
-        <span class="btn-icon">R</span>
+        <span class="btn-icon">&#x21a9;</span>
         恢复原文
       </button>
 

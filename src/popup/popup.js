@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sourceLang = document.getElementById('sourceLang');
   const targetLang = document.getElementById('targetLang');
   const displayMode = document.getElementById('displayMode');
+  const selectionToggle = document.getElementById('selectionToggle');
   const translateBtn = document.getElementById('translateBtn');
   const restoreBtn = document.getElementById('restoreBtn');
   const logBtn = document.getElementById('logBtn');
@@ -14,11 +15,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let inProgress = false;
 
-  const settings = await chrome.storage.local.get(['enabled','sourceLang','targetLang','displayMode']);
+  const settings = await chrome.storage.local.get(['enabled','sourceLang','targetLang','displayMode','selectionTranslateEnabled']);
   translateToggle.checked = settings.enabled !== false;
   sourceLang.value = settings.sourceLang || 'auto';
   targetLang.value = settings.targetLang || 'zh';
   displayMode.value = settings.displayMode || 'bilingual';
+  selectionToggle.checked = settings.selectionTranslateEnabled !== false;
 
   // Query status from current tab's main frame
   try {
@@ -37,6 +39,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   displayMode.addEventListener('change', async () => {
     await chrome.storage.local.set({ displayMode: displayMode.value });
     sendCmd('setDisplayMode', { mode: displayMode.value });
+  });
+  selectionToggle.addEventListener('change', async () => {
+    await chrome.storage.local.set({ selectionTranslateEnabled: selectionToggle.checked });
   });
 
   translateBtn.addEventListener('click', async () => {
