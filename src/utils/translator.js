@@ -86,45 +86,57 @@ export async function translateWithDeepSeek(texts, sourceLang, targetLang) {
 
   let result = parseResponse(content, texts.length);
 
-  // 检测：如果超过一半的译文和原文相同，可能是模型偷懒没翻译
-  const unchanged = texts.filter((t, i) => i < result.length && result[i] === t).length;
-  if (unchanged > texts.length * 0.4 && texts.length > 1) {
-    console.warn(`[AI翻译] 发现 ${unchanged}/${texts.length} 条未翻译，使用加强 prompt 重试`);
+  // 针对性重试：收集未翻译的文本，只对这些文本单独重试
+  const unchangedIndices = [];
+  for (let i = 0; i < texts.length; i++) {
+    if (i < result.length && result[i] === texts[i]) {
+      unchangedIndices.push(i);
+    }
+  }
+
+  if (unchangedIndices.length > 0) {
+    const unchangedTexts = unchangedIndices.map(i => texts[i]);
+    console.warn(`[AI翻译] 发现 ${unchangedIndices.length}/${texts.length} 条未翻译，针对性重试`, unchangedTexts.map(t => t.slice(0, 40)));
 
     const retryPrompt = `你是一个严格的翻译引擎。上一轮你返回了未翻译的原文，这是不可接受的。
 
-请将以下所有文本从${sourceName}翻译成${targetName}。每条文本都必须翻译，无论其中是否包含英文词汇。
+请将以下 ${unchangedTexts.length} 条文本从${sourceName}翻译成${targetName}。每条文本都必须完整翻译，不要保留任何英文原文。技术术语和品牌名周围的描述性文字也必须翻译。
 
-严格返回 JSON：{"texts":["译文1","译文2",...]}`;
+严格返回 JSON：{"texts":["译文1","译文2",...]}，数组长度必须为 ${unchangedTexts.length}`;
 
     const retryBody = {
       ...body,
       messages: [
         { role: 'system', content: retryPrompt },
-        { role: 'user', content: `请务必全部翻译（${texts.length}条）：` + JSON.stringify(texts) }
+        { role: 'user', content: JSON.stringify({ texts: unchangedTexts }) }
       ],
-      temperature: Math.min((effectiveTemp || 0.3) + 0.2, 1.0)
+      temperature: Math.min((effectiveTemp || 0.3) + 0.25, 1.0)
     };
 
-    const retryResp = await fetchWithRetry(DEEPSEEK_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${settings.apiKey}`
-      },
-      body: JSON.stringify(retryBody)
-    });
+    try {
+      const retryResp = await fetchWithRetry(DEEPSEEK_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${settings.apiKey}`
+        },
+        body: JSON.stringify(retryBody)
+      });
 
-    const retryData = await retryResp.json();
-    const retryContent = retryData.choices?.[0]?.message?.content;
-    if (retryContent) {
-      const retryResult = parseResponse(retryContent, texts.length);
-      // 只替换那些没被翻译的条目
-      for (let i = 0; i < texts.length && i < result.length; i++) {
-        if (result[i] === texts[i] && i < retryResult.length && retryResult[i] !== texts[i]) {
-          result[i] = retryResult[i];
+      const retryData = await retryResp.json();
+      const retryContent = retryData.choices?.[0]?.message?.content;
+      if (retryContent) {
+        const retryResult = parseResponse(retryContent, unchangedTexts.length);
+        // 只替换那些现在被正确翻译的条目
+        for (let j = 0; j < unchangedIndices.length && j < retryResult.length; j++) {
+          if (retryResult[j] !== unchangedTexts[j]) {
+            result[unchangedIndices[j]] = retryResult[j];
+          }
         }
       }
+    } catch (e) {
+      console.warn('[AI翻译] 针对性重试失败', e.message);
+      // 重试失败不阻塞，用原结果继续
     }
   }
 

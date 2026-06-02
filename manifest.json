@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI 翻译助手",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "基于 DeepSeek V4 的网页翻译插件，支持双语对照、右键翻译、思考模式",
   "icons": {
     "16": "icons/icon-16.png",

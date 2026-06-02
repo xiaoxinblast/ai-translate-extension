@@ -83,9 +83,9 @@ function dumpDiagnostics() {
 
   const nodes = getTranslatableTextNodes(document.body);
   const translated = document.querySelectorAll(`.${TRAN_CLASS}`);
-  const lines = ['=== AI翻译 - 诊断快照 ===', `时间: ${new Date().toISOString()}`, `URL: ${location.href}`, `frame大小: ${window.innerWidth}x${window.innerHeight}`, `文档总文本节点: ${rawCount}`, '', `--- 可翻译文本节点 (${nodes.length}) ---`];
-  // 对原始文本节点做过滤分析
+  // 对原始文本节点做过滤分析（必须在 lines 之前收集，供 rawCount 使用）
   const rawNodes = []; { const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) rawNodes.push(n); }
+  const lines = ['=== AI翻译 - 诊断快照 ===', `时间: ${new Date().toISOString()}`, `URL: ${location.href}`, `frame大小: ${window.innerWidth}x${window.innerHeight}`, `文档总文本节点: ${rawNodes.length}`, '', `--- 可翻译文本节点 (${nodes.length}) ---`];
   const accepted = new Set(nodes);
   const rejectedSample = [];
   for (let i = 0; i < Math.min(rawNodes.length, 300); i++) {
@@ -400,45 +400,101 @@ async function processQueue(sl, tl) {
         return aTop - bTop;
       });
 
-      // 取出当前队列全部节点，分成多批并行翻译
+      // 取出当前队列全部节点，合并内联碎片后分批并行翻译
       const allNodes = state.pendingNodes.splice(0);
+      const nodeCount = allNodes.length;
+
+      // 合并被内联元素（<a>/<code>/<strong>等）分隔的相邻文本节点
+      const units = buildTranslationUnits(allNodes);
+
       const batches = [];
-      for (let i = 0; i < allNodes.length; i += maxBatch) {
-        batches.push(allNodes.slice(i, i + maxBatch));
+      for (let i = 0; i < units.length; i += maxBatch) {
+        batches.push(units.slice(i, i + maxBatch));
       }
 
-      const results = []; // { node, translated }[]
       const batchTasks = batches.map(async (batch) => {
         const uncached = [], batchResults = [];
-        for (const node of batch) {
-          const text = node.textContent.trim();
+
+        for (const unit of batch) {
+          const text = unit.type === 'group' ? unit.combinedText : unit.node.textContent.trim();
           const cached = getCached(text, sl, tl);
           if (cached !== undefined) {
-            batchResults.push({ node, translated: cached });
             cacheHitsAcc++;
+            if (unit.type === 'single') {
+              batchResults.push({ node: unit.node, translated: cached });
+            } else {
+              const parts = splitOnMarkers(cached, unit.markers);
+              if (parts) {
+                for (let j = 0; j < unit.nodes.length; j++) {
+                  batchResults.push({ node: unit.nodes[j], translated: parts[j] || unit.nodes[j].textContent.trim() });
+                }
+              } else {
+                // 缓存数据异常，退化为单节点重译
+                for (const n of unit.nodes) uncached.push({ type: 'single', node: n });
+              }
+            }
           } else {
-            uncached.push(node);
-            showLoading(node);
+            uncached.push(unit);
+            if (unit.type === 'single') {
+              showLoading(unit.node);
+            } else {
+              showGroupLoading(unit.nodes);
+            }
           }
         }
+
         if (uncached.length > 0) {
           apiReqsAcc++;
-          const texts = uncached.map(n => n.textContent.trim());
-          logger.info(`API #${apiReqsAcc}`, { batch: uncached.length, totalBatches: batches.length });
+          const apiTexts = uncached.map(u => u.type === 'group' ? u.combinedText : u.node.textContent.trim());
+          logger.info(`API #${apiReqsAcc}`, { batch: apiTexts.length, totalBatches: batches.length, groups: uncached.filter(u => u.type === 'group').length });
           try {
-            const translated = await requestTranslation(texts, sl, tl);
-            uncached.forEach((node, i) => {
-              hideLoading(node);
-              const text = node.textContent.trim();
-              const t = i < translated.length ? translated[i] : text;
-              setCache(text, sl, tl, t);
-              batchResults.push({ node, translated: t });
-            });
+            const translated = await requestTranslation(apiTexts, sl, tl);
+
+            for (let ui = 0; ui < uncached.length; ui++) {
+              const unit = uncached[ui];
+              const rawText = unit.type === 'group' ? unit.combinedText : unit.node.textContent.trim();
+              const translatedText = ui < translated.length ? translated[ui] : rawText;
+              setCache(rawText, sl, tl, translatedText);
+
+              if (unit.type === 'single') {
+                hideLoading(unit.node);
+                batchResults.push({ node: unit.node, translated: translatedText });
+              } else {
+                hideGroupLoading(unit.nodes);
+                const parts = splitOnMarkers(translatedText, unit.markers);
+                if (parts) {
+                  for (let j = 0; j < unit.nodes.length; j++) {
+                    batchResults.push({ node: unit.nodes[j], translated: parts[j] || unit.nodes[j].textContent.trim() });
+                  }
+                } else {
+                  // 标记丢失：回退到按原文字符比例分配，比完全丢弃好
+                  logger.warn('合并翻译标记丢失，按比例回退', { translated: translatedText.slice(0, 60), markers: unit.markers });
+                  const origLengths = unit.nodes.map(n => n.textContent.trim().length);
+                  const totalLen = origLengths.reduce((a, b) => a + b, 0) || 1;
+                  let pos = 0;
+                  for (let j = 0; j < unit.nodes.length; j++) {
+                    const charShare = Math.round(translatedText.length * origLengths[j] / totalLen);
+                    const part = j < unit.nodes.length - 1
+                      ? translatedText.slice(pos, pos + charShare)
+                      : translatedText.slice(pos);
+                    batchResults.push({ node: unit.nodes[j], translated: part.trim() || unit.nodes[j].textContent.trim() });
+                    pos += charShare;
+                  }
+                }
+              }
+            }
           } catch (err) {
             logger.error(`API #${apiReqsAcc} 失败`, { error: err.message });
-            uncached.forEach(n => hideLoading(n));
+            for (const unit of uncached) {
+              if (unit.type === 'single') {
+                hideLoading(unit.node);
+              } else {
+                hideGroupLoading(unit.nodes);
+              }
+            }
           }
         }
+
         return batchResults;
       });
 
@@ -493,6 +549,117 @@ function flushRemaining(allNodes, sl, tl) {
     }
   }
   if (pushed > 0) { logger.info('兜底追加', { pushed }); processQueue(sl, tl); }
+}
+
+// ===== 句子碎片合并 =====
+
+// 块级标签集合
+const BLOCK_TAGS = new Set([
+  'DIV', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
+  'SECTION', 'ARTICLE', 'ASIDE', 'HEADER', 'FOOTER', 'NAV',
+  'UL', 'OL', 'LI', 'TABLE', 'TR', 'TD', 'TH', 'BLOCKQUOTE',
+  'FORM', 'FIELDSET', 'DETAILS', 'DIALOG', 'HR', 'BR',
+  'ADDRESS', 'FIGURE', 'FIGCAPTION', 'MAIN', 'PRE',
+  'DL', 'DT', 'DD', 'IFRAME', 'BUTTON', 'SELECT', 'INPUT'
+]);
+
+function isBlockElement(el) {
+  if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+  if (BLOCK_TAGS.has(el.tagName)) return true;
+  const display = window.getComputedStyle(el).display;
+  return display === 'block' || display === 'flex' || display === 'grid' ||
+         /^table/.test(display) || display === 'list-item';
+}
+
+// 两个文本节点是否属于同一句子（之间只有内联元素/文本，无块级元素）
+function areCloseTextNodes(a, b) {
+  if (a === b) return false;
+  try {
+    const range = document.createRange();
+    range.setStartAfter(a);
+    range.setEndBefore(b);
+    const fragment = range.cloneContents();
+    const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_ELEMENT);
+    let el;
+    while ((el = walker.nextNode())) {
+      if (isBlockElement(el)) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// 分隔标记（在 API 请求中连接碎片句子，翻译后按此拆分回各节点）
+const SEP_PREFIX = '[SEP';
+function sepMarker(i) { return SEP_PREFIX + i + ']'; } // [SEP0]
+
+// 将文本节点合并为翻译单元：被内联元素分隔的相邻节点合并为一个完整句子
+function buildTranslationUnits(nodes) {
+  if (nodes.length === 0) return [];
+
+  const sorted = [...nodes].sort((a, b) => {
+    const pos = a.compareDocumentPosition(b);
+    if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+    if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+    return 0;
+  });
+
+  const units = [];
+  let group = [sorted[0]];
+
+  for (let i = 1; i < sorted.length; i++) {
+    if (areCloseTextNodes(group[group.length - 1], sorted[i])) {
+      group.push(sorted[i]);
+    } else {
+      flushGroup(group, units);
+      group = [sorted[i]];
+    }
+  }
+  flushGroup(group, units);
+
+  return units;
+}
+
+function flushGroup(group, units) {
+  if (group.length === 0) return;
+  if (group.length === 1) {
+    units.push({ type: 'single', node: group[0] });
+    return;
+  }
+
+  const parts = group.map(n => n.textContent.trim());
+  const markers = [];
+  let combinedText = parts[0];
+  for (let i = 1; i < parts.length; i++) {
+    const marker = sepMarker(i - 1);
+    markers.push(marker);
+    combinedText += marker + parts[i];
+  }
+
+  units.push({
+    type: 'group',
+    nodes: group,
+    combinedText,
+    markers
+  });
+}
+
+// 按标记拆分翻译结果回各节点
+function splitOnMarkers(translatedText, markers) {
+  let remaining = translatedText;
+  const parts = [];
+  for (const marker of markers) {
+    const idx = remaining.indexOf(marker);
+    if (idx >= 0) {
+      parts.push(remaining.slice(0, idx).trim());
+      remaining = remaining.slice(idx + marker.length);
+    } else {
+      return null; // 标记丢失，通知调用方回退
+    }
+  }
+  parts.push(remaining.trim());
+  return parts;
 }
 
 // ===== 文本节点收集 =====
@@ -561,11 +728,32 @@ function showLoading(textNode) {
   textNode.parentElement.insertBefore(spinner, textNode.nextSibling);
 }
 
+// 为合并组显示单个加载图标（放组尾节点后）
+function showGroupLoading(nodes) {
+  const last = nodes[nodes.length - 1];
+  const spinner = document.createElement('span');
+  spinner.className = LOADING_CLASS;
+  spinner.dataset.groupSpinner = '1';
+  spinner.innerHTML = '<span class="ai-loading-spinner-dot"></span>';
+  last.parentElement.insertBefore(spinner, last.nextSibling);
+}
+
 function hideLoading(textNode) {
   if (textNode.parentElement) {
-    const spinners = textNode.parentElement.querySelectorAll(`.${LOADING_CLASS}`);
+    const spinners = textNode.parentElement.querySelectorAll(`.${LOADING_CLASS}:not([data-group-spinner])`);
     spinners.forEach(s => { if (s.previousSibling === textNode) s.remove(); });
   }
+}
+
+// 移除合并组的加载图标
+function hideGroupLoading(nodes) {
+  const last = nodes[nodes.length - 1];
+  if (last.parentElement) {
+    const spinners = last.parentElement.querySelectorAll(`.${LOADING_CLASS}[data-group-spinner]`);
+    spinners.forEach(s => { if (s.previousSibling === last) s.remove(); });
+  }
+  // 兜底：清除所有 group spinner
+  document.querySelectorAll(`.${LOADING_CLASS}[data-group-spinner]`).forEach(s => s.remove());
 }
 
 // ===== 注入翻译（非破坏式追加） =====
@@ -609,6 +797,7 @@ function restorePage() {
   state.pendingNodes = [];
   // 清除残留 spinner
   document.querySelectorAll(`.${LOADING_CLASS}`).forEach(s => s.remove());
+  document.querySelectorAll(`.${LOADING_CLASS}[data-group-spinner]`).forEach(s => s.remove());
 
   chrome.runtime.sendMessage({ action: 'translationRestored' }).catch(() => {});
 }
