@@ -150,6 +150,9 @@ function dumpDiagnostics() {
 	logger.info('诊断已导出', { frameId, nodes: nodes.length, translated: translated.length });
 }
 
+// ===== 当前标签页 ID（由 background 告知，用于过滤跨标签页信号） =====
+let myTabId = null;
+
 // ===== 状态 =====
 const state = {
   translations: new Map(), // TextNode -> { original, translated, spanEl }
@@ -190,9 +193,19 @@ window.addEventListener('message', (e) => {
 });
 
 (async () => {
+  // 获取当前标签页 ID（用于过滤跨标签页的 translateSignal）
+  try {
+    myTabId = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action: 'getTabId' }, (resp) => {
+        resolve(resp ?? null);
+      });
+    });
+  } catch (e) {
+    logger.warn('获取 tabId 失败', { error: e.message });
+  }
   const s = await chrome.storage.local.get(['displayMode']);
   state.displayMode = s.displayMode || 'bilingual';
-  logger.info('content.js 初始化', { displayMode: state.displayMode });
+  logger.info('content.js 初始化', { displayMode: state.displayMode, tabId: myTabId });
 })();
 
 // ===== 显示模式 =====
@@ -212,10 +225,13 @@ async function setDisplayMode(mode) {
   logger.info('显示模式切换', { mode });
 }
 
-// ===== 翻译信号：通过 storage 同步所有 frame =====
+// ===== 翻译信号：通过 storage 同步所有 frame（按 tabId 隔离） =====
 chrome.storage.local.onChanged.addListener((changes) => {
   if (changes.translateSignal && changes.translateSignal.newValue) {
-    const { action, sourceLang, targetLang, mode, enabled } = changes.translateSignal.newValue;
+    const signal = changes.translateSignal.newValue;
+    // 仅响应发给本标签页的信号（tabId 为 null 时跳过，等待初始化完成）
+    if (signal.tabId != null && myTabId != null && signal.tabId !== myTabId) return;
+    const { action, sourceLang, targetLang, mode, enabled } = signal;
     if (action === 'translate') {
       handleTranslate(sourceLang || 'auto', targetLang || 'zh');
     } else if (action === 'restore') {

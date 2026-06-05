@@ -66,9 +66,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   function showStatus(t, m) { statusBar.classList.remove('hidden','error','translating'); if (t==='error') statusBar.classList.add('error'); if (t==='translating') statusBar.classList.add('translating'); statusText.textContent = m; }
   function hideStatus() { statusBar.classList.add('hidden'); }
 
-  // 通过 chrome.storage 广播指令（所有 frame 都能收到）
+  // 通过 chrome.storage 广播指令（按 tabId 隔离，仅当前标签页的 frame 响应）
   async function sendCmd(action, payload = {}) {
-    await chrome.storage.local.set({ translateSignal: { action, ...payload, _ts: Date.now() } });
+    let tabId = null;
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      tabId = tab?.id ?? null;
+    } catch (e) { /* ignore */ }
+    await chrome.storage.local.set({ translateSignal: { action, ...payload, tabId, _ts: Date.now() } });
   }
 });
 

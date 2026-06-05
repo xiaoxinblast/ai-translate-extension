@@ -67,14 +67,14 @@ chrome.commands.onCommand.addListener((command) => {
     if (command === 'translate-page') {
       const isTranslated = await getTabState(tab.id);
       if (isTranslated) {
-        await chrome.storage.local.set({ translateSignal: { action: 'restore', _ts: Date.now() } });
+        await chrome.storage.local.set({ translateSignal: { action: 'restore', tabId: tab.id, _ts: Date.now() } });
       } else {
         chrome.storage.local.get(['sourceLang', 'targetLang'], async (s) => {
-          await chrome.storage.local.set({ translateSignal: { action: 'translate', sourceLang: s.sourceLang || 'auto', targetLang: s.targetLang || 'zh', _ts: Date.now() } });
+          await chrome.storage.local.set({ translateSignal: { action: 'translate', sourceLang: s.sourceLang || 'auto', targetLang: s.targetLang || 'zh', tabId: tab.id, _ts: Date.now() } });
         });
       }
     } else if (command === 'restore-page') {
-      await chrome.storage.local.set({ translateSignal: { action: 'restore', _ts: Date.now() } });
+      await chrome.storage.local.set({ translateSignal: { action: 'restore', tabId: tab.id, _ts: Date.now() } });
     }
   });
 });
@@ -83,12 +83,12 @@ async function toggleTranslate(tabId) {
   const isTranslated = await getTabState(tabId);
 
   if (isTranslated) {
-    await chrome.storage.local.set({ translateSignal: { action: 'restore', _ts: Date.now() } });
+    await chrome.storage.local.set({ translateSignal: { action: 'restore', tabId, _ts: Date.now() } });
     await setTabState(tabId, false);
     chrome.contextMenus.update('toggle-translate', { title: '翻译页面' });
   } else {
     chrome.storage.local.get(['sourceLang', 'targetLang'], async (s) => {
-      await chrome.storage.local.set({ translateSignal: { action: 'translate', sourceLang: s.sourceLang || 'auto', targetLang: s.targetLang || 'zh', _ts: Date.now() } });
+      await chrome.storage.local.set({ translateSignal: { action: 'translate', sourceLang: s.sourceLang || 'auto', targetLang: s.targetLang || 'zh', tabId, _ts: Date.now() } });
     });
     await setTabState(tabId, true);
     chrome.contextMenus.update('toggle-translate', { title: '还原原文' });
@@ -125,6 +125,11 @@ async function broadcastToTab(tabId, message) {
 
 // ===== 消息中转 =====
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // content script 查询自己的 tabId
+  if (message.action === 'getTabId') {
+    sendResponse(sender.tab?.id ?? null);
+    return;
+  }
   if (message.action === 'translate') {
     handleTranslate(message).then(sendResponse);
     return true;
